@@ -1,53 +1,67 @@
 <?php
 /**
-* YATE. Yeah! Another template.
-* A simple template toolkit for php. It includes a template class and some function.
+* YATE. Yeah! Another template
+* A simple template toolkit for php.
+* I give this name inspired by the same name in book Head First Python.
+* Usege and notice:
+* - Supports {$variable_name}, {$array.key}, {$array.key.key2} placehoder to parse the same name variable.
+* - Supports {~php_code} placehoder for you to run your php code.
+* - Supports <?php php_code ?> and et al original php placehoder to run php code.
+* ! But don't include/require/include_once/require_once files into your template, if these include/require files contain placehoder above.
+* - These palacehoders in your include/require files will not be parse correctly. 
+* - Hope you know this feature and maybe in the next version of YATE, I would write YATE to support include/require file parse.
+* -
+* Example:
+*     $Yate = new Yate;
+*     $a = array('head'=>'head HTML', 'body'=>'body HTML', 'array'=>array(1,2,3));
+*     $Yate->assign($a);
+*     echo $Yate->replace_template('head.php');
+*     echo $Yate->replace_template('html.php');
+*     echo $Yate->replace_template('footer.php');
+* -
 * It simple for simple project! Happy to use it.
 * Coded by ekeyme@gmail.com, since Ag 05, 2015
 */
+class Yate{
 
-// Config
-// 模板文件，默认当前文件夹
-$YATE_DIR = dirname(__FILE__); 
+    // 左与右占位符分别为 '{$' / '}' 不提供方便的自定制；要改请小心更改预定义类变量 Yate::preg_compile_rule
+    #private $left_delimiter = '{$'; private $right_delimiter = '}';
+    // 模板缓存目录
+    private $template_c_dir = './templates_c';
+    // 模板目录
+    private $template_dir = './templates';
+    // 如果模板更新时间大于缓存模板更新时间？秒，则重新编译模板
+    private $cache_life = 1;
 
-/**
- * 返回头部信息
- * For cgi user
- */
-function start_response($resp="text/html"){
-    return('Content-type: ' . $resp . '\n\n');
-}
+    //变量储存的键-值对数组，用以替换模板中的占位符
+    private $key_value_pair;
+    //编译模板文件名的前缀
+    private $prefix_template_c = 'c_';
+    // 解析编译模板的正则替换规则
+    private $preg_compile_rule = array(
+        '/\{(\$[a-z0-9_]+)\}/i' => '<?php echo $1; ?>', // {$name}
+          
+        '/\{(\$[a-z0-9_]+)\.([a-z0-9_]+)\}/i' => '<?php echo $1[\'$2\']; ?>', // {$arr.key} 
+          
+        '/\{(\$[a-z0-9_]+)\.([a-z0-9_]+)\.([a-z0-9_]+)\}/i' => '<?php echo $1[\'$2\'][\'$3\']; ?>', // {$arr.key.key2}
 
-/**
- * HTML的头
- */
-function include_header($the_title){
-    $yate = new Yate_Template();
+        '/\{\~(.+?)\}/' => '<?php $1; ?>' // PHP代码{~var_dump($a)} 
+    );
 
-    return($yate->replace_and_fetch($YATE_DIR . '/header.html', $the_title));
-}
-	
-class Yate_Template{
-
-	//变量储存的键-值对数组，用以替换模板中的占位符
-	private $key_value_pair;
-	// 左占位符
-	private $left_delimiter = '${';
-	// 右占位符
-	private $right_delimiter = '}';
-	
-	/**
-	 * 初始器
-	 */
-	public function __construct(){
-	}
-	
-	/**  
+    /***初始化*/
+    public function __construct(){
+        if (defined('YATE_TEMPLATE_DIR')) $this->template_dir = YATE_TEMPLATE_DIR;
+        if (defined('YATE_TEMPLATE_C_DIR')) $this->template_c_dir = YATE_TEMPLATE_C_DIR;
+        if (defined('YATE_CACHE_LIFE')) $this->cache_life = YATE_CACHE_LIFE;
+    }
+    
+    /**  
      *键-值赋值  
      *@param $key mixed 键名  
      *@param $value mixed 值  
+     *@return void
      */
-    public function assign($key , $value = ''){  
+    public function assign($key , $value = ''){
         if(is_array($key)){  
             $this->key_value_pair=array_merge($key,$this->key_value_pair);  
         }  
@@ -55,194 +69,90 @@ class Yate_Template{
             $this->key_value_pair[$key]=$value;  
         }  
     }  
-	
-	/**
-	 *@to-do
-	 *显示模板先放着不做先
-	 */
-	public function display($template){
-	}
-	
-	/**
-	 * 替换并获取模板的内容
-	 * @para $template string 模板文件
-	 * @para $replace array 替换键-值对.如果不提供将使用类中的$this->key_value_pair 数组替换
-	 */
-	public function replace_and_fetch($template, $replace = false){
-		if (!$replace) $replace = $this->key_value_pair;
-		
-		// 将key拼凑成与模板中的占位符一致的模式${key}
-		$r = array(
-			'["' => '["' . $this->left_delimiter,
-			'","' => $this->right_delimiter . '","$' . $this->left_delimiter,
-			'"]' => $this->right_delimiter . '"]'
-		);
-		$key = json_decode(str_replace(array_keys($r), $r, json_encode(array_keys($replace))));
-		
-		return str_replace($key, $replace, $this->readfile($template));
-	}
-	
-	/*  
+    
+    /**
+     *显示模板
+     *@return void
+     */
+    public function display($template){
+        echo $this->replace_template($template_path);
+    }
+    
+    /**
+     *替换模板的内容
+     *过程包括1.将标识替换回原始的PHP代码形式；2.生成并存储替换后的模板
+     *@param $file string 模板文件名
+     *@param $replace array 替换键-值对.如果不提供将使用类中的$this->key_value_pair 数组替换
+     *@return string
+     */
+    public function replace_template($file, $replace = false){
+        if (!$replace) $replace = $this->key_value_pair;
+        
+        $template_path = $this->template_dir. '/' . $file;
+        $template_c_path = $this->template_c_dir . '/' . $this->prefix_template_c . $this->get_cache_file($template_path);
+
+        // 缓存是否过期？过期重新编译并缓存
+        if ($this->cache_life < filemtime($template_path)-filemtime($template_c_path))
+            $this->compile_and_cache($template_path, $template_c_path);
+
+        //打开输出控制缓冲，获取缓存区的内容
+        ob_start();
+
+        @extract($replace, EXTR_OVERWRITE);  
+        include($template_c_path);  
+        $content = ob_get_contents();  
+
+        ob_end_clean();
+        
+        return $content;  
+    }
+
+    /**
+     *编译并缓存模板文件
+     *@param $template_path string 模板文件的路径
+     *@param $template_c_path string 编译后模板文件的路径
+     */
+    private function compile_and_cache($template_path, $template_c_path){
+        $content = $this->readfile($template_path);
+        $content = preg_replace(array_keys($this->preg_compile_rule), $this->preg_compile_rule , $content);
+
+        file_put_contents($template_c_path, $content);
+        return $content;
+    }
+
+    /**
+     *返回模板文件相对应的缓存模板文件名
+     *通过模板文件的路径获得其缓存模板
+     *@param $template_path string 模板文件的path路径
+     *@return string
+     */
+    private function get_cache_file($template_path){
+        return str_replace('/', '%', $template_path);
+    }
+    
+    /**
      *读取文件的内容  
      *@param $file string 文件名  
      *@return $content string 文件内容  
      */  
-    private function readfile($file){  
-        if(file_exists($file)){  
-            return file_get_contents($file);  
-        }  
-        else{  
-            exit($file . ' not exist!');  
-        }  
+    private function readfile($file){
+
+        try{
+            return file_get_contents($file);
+        }
+        catch(Exception $e){
+            exit($e->errorMessage());
+        }
+
     }
+
+
 }
 
-class template{  
-      
-    //变量储存的数组  
-    private $vars = array();  
-    //模板目录  
-    public $template_dir = './template/';  
-    //缓存目录   
-    public $cache_dir = './cache/';  
-    //编译目录  
-    public $template_c_dir = './template_c/';  
-    //模板文件  
-    public $template_file = '';  
-    //左连接符  
-    public $left_delimiter = '<{';  
-    //右连接符  
-    public $right_delimiter = '}>';  
-    //编译文件  
-    private $template_c_file = '';  
-    //缓存文件  
-    private $cache_file = '';  
-    //缓存时间  
-    public $cache_time = 0;  
-      
-    //内置解析器  
-    private $preg_temp = array(  
-        '~<\{(\$[a-z0-9_]+)\}>~i'  
-            => '<?php echo $1; ?>', // <{$name}>  
-          
-        '~<\{(\$[a-z0-9_]+)\.([a-z0-9_]+)\}>~i'  
-            => '<?php echo $1[\'$2\']; ?>', // <{$arr.key}>  
-          
-        '~<\{(\$[a-z0-9_]+)\.([a-z0-9_]+)\.([a-z0-9_]+)\}>~i'  
-            => '<?php echo $1[\'$2\'][\'$3\']; ?>', // <{$arr.key.key2}>  
-          
-        '~<\?php\s+(include_once|require_once|include|require)\s*\s∗(.+?)\s∗\s*;?\s*\?>~i'  
-            => '<?php include \$this->_include($2); ?>', // ＜?php include('inc/top.php'); ?＞  
-          
-        '~<\{:(.+?)\}>~' => '<?php echo $1; ?>', // <{:strip_tags($a)}>  
-          
-        '~<\{\~(.+?)\}>~' => '<?php $1; ?>', // <{~var_dump($a)}>  
-          
-        '~<\?=\s*~' => '<?php echo ', // <?=  
-    );  
-      
-    /**
-	 *初始器
-	 */
-    public function __construct(){  
-        if(defined('TMP_PATH')){  
-            $this->template_c_dir = TMP_PATH . 'template_c/';  
-            $this->cache_dir   = TMP_PATH . 'cache/';  
-        }  
-    }  
-      
-    /**       
-	 *变量赋值       
-	 *@param $key mixed 键名       
-	 *@param $value mixed 值       
-	 */  
-    public function assign($key , $value = ''){  
-        if(is_array($key)){  
-            $this->vars=array_merge($key,$this->vars);  
-        }  
-        else{  
-            $this->vars[$key]=$value;  
-        }  
-    }  
-      
-    /**       *显示页面       *@param $file string 模板文件名       */  
-    public function display($file){  
-        echo $this->fetch($file);  
-    }  
-      
-    /**       *返回缓存区内容       *@param $file string 模板文件名       *@return $content string 缓存内容       */  
-    public function fetch($file){  
-        $this->template_file = $file;  
-        $desc_template_file = $this->template_dir .$file;  
-        $desc_content = $this->readfile($desc_template_file);  
-          
-        $template_c_file_time= filemtime($desc_template_file);  
-        //若在超过缓存时间，则编译  
-        if($this->cache_time < time()-$template_c_file_time){  
-            $this->complie($this->token($desc_content));  
-        }  
-        //以下获取缓存区的内容  
-        ob_start();  
-          
-        @extract($this->vars , EXTR_OVERWRITE);  
-        include ($this->template_c_dir . $this->template_c_file);  
-          
-        $content = ob_get_contents();  
-        ob_end_clean();  
-          
-        //$this->store_buff($content);  
-        return $content;  
-    }  
-      
-    /*       *替换分隔符，以及替换解析器的内容       *@param $content string 读取的内容       *@return $token_content string 替换后的内容       */  
-    public function token($content){  
-        $token_content = $content;  
-        if($left_delimiter != '<{'){  
-            $token_content = str_replace($left_delimiter , '<{' , $token_content);  
-            $token_content = str_replace($right_delimiter, '}>' , $token_content);  
-        }  
-        $token_content = preg_replace(array_keys($this->preg_temp), $this->preg_temp , $token_content);  
-        return $token_content;  
-    }  
-      
-    /*       *生成储存       *@param $content string 读取的内容       *             public function store_buff($content){          $this->cache_file = md5($this->template_file) . $this->template_file . '.html';          $tempfile = $this->cache_dir . $this->cache_file;          $fp = fopen($tempfile , 'w');          fputs($fp,$content);          fclose($fp);          unset($fp);      }      */  
-      
-    /*       *编译储存       *@param $content string 读取的内容       *       */  
-    public function complie($content){  
-        $this->template_c_file = md5($this->template_file) . $this->template_file . '.php';  
-        $tempfile = $this->template_c_dir . $this->template_c_file;  
-        $fp = fopen($tempfile , 'w');  
-        fputs($fp,$content);  
-        fclose($fp);  
-        unset($fp);  
-    }  
-      
-    /*       *读取文件的内容       *@param $file string 文件名       *@return $content string 文件内容       */  
-    public function readfile($file){  
-        if(file_exists($file)){  
-            $fp = fopen($file , 'r');  
-            $content ='';  
-            while(!feof($fp)){  
-                $content .= fgets($fp,4096);  
-            }  
-            fclose($fp);  
-            unset($fp);  
-            return $content;  
-        }  
-        else{  
-            exit($file . ' not exist!');  
-        }  
-    }  
-      
-    /*       *模板嵌套       *@param $file string 文件名       *@return string 文件的绝对地址       */  
-    public function _include($file){  
-        if(file_exists($this->template_dir . $file)){  
-            return ($this->template_dir . $file);  
-        }  
-        else{  
-            echo "模板文件不存在";  
-            exit;  
-        }  
-    }  
-}  
+/**
+ *检测并安装Yate所需的模板目录条件
+ *@to-do
+ */
+function yate_check_and_install(){
 
+}
