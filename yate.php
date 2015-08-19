@@ -14,7 +14,7 @@
 * Example:
 *     $Yate = new Yate;
 *     $a = array('head'=>'head HTML', 'body'=>'body HTML', 'array'=>array(1,2,3));
-*     $Yate->assign($a);
+*     $Yate->set($a);
 *     echo $Yate->replace_template('head.php');
 *     echo $Yate->replace_template('html.php');
 *     echo $Yate->replace_template('footer.php');
@@ -34,7 +34,7 @@ class Yate{
     private $cache_life = 1;
 
     //变量储存的键-值对数组，用以替换模板中的占位符
-    private $key_value_pair;
+    private $key_value_pair = array();
     //编译模板文件名的前缀
     private $prefix_template_c = 'c_';
     // 解析编译模板的正则替换规则
@@ -45,7 +45,7 @@ class Yate{
           
         '/\{(\$[a-z0-9_]+)\.([a-z0-9_]+)\.([a-z0-9_]+)\}/i' => '<?php echo $1[\'$2\'][\'$3\']; ?>', // {$arr.key.key2}
 
-        '/\{\~(.+?)\}/' => '<?php $1; ?>' // PHP代码{~var_dump($a)} 
+        '/\{\~(.+?)\}/' => '<?php $1 ?>' // PHP代码{~var_dump($a)} 
     );
 
     /***初始化*/
@@ -61,20 +61,20 @@ class Yate{
      *@param $value mixed 值  
      *@return void
      */
-    public function assign($key , $value = ''){
+    public function set($key , $value = ''){
         if(is_array($key)){  
-            $this->key_value_pair=array_merge($key,$this->key_value_pair);  
+            $this->key_value_pair=array_merge($key, $this->key_value_pair);  
         }  
         else{  
             $this->key_value_pair[$key]=$value;  
-        }  
+        }
     }  
     
     /**
      *显示模板
      *@return void
      */
-    public function display($template){
+    public function display($template_path){
         echo $this->replace_template($template_path);
     }
     
@@ -90,7 +90,7 @@ class Yate{
         
         $template_path = $this->template_dir. '/' . $file;
         $template_c_path = $this->template_c_dir . '/' . $this->prefix_template_c . $this->get_cache_file($template_path);
-
+        
         // 缓存是否过期？过期重新编译并缓存
         if ($this->cache_life < filemtime($template_path)-filemtime($template_c_path))
             $this->compile_and_cache($template_path, $template_c_path);
