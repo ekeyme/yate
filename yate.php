@@ -1,24 +1,11 @@
 <?php
 /**
 * YATE. Yeah! Another template
-* A simple template toolkit for php.
-* I give this name inspired by the same name in book Head First Python.
-* Usege and notice:
-* - Supports {$variable_name}, {$array.key}, {$array.key.key2} placehoder to parse the same name variable.
-* - Supports {~php_code} placehoder for you to run your php code.
-* - Supports <?php php_code ?> and et al original php placehoder to run php code.
-* ! But don't include/require/include_once/require_once files into your template, if these include/require files contain placehoder above.
-* - These palacehoders in your include/require files will not be parse correctly. 
-* - Hope you know this feature and maybe in the next version of YATE, I would write YATE to support include/require file parse.
-* -
-* Example:
-*     $Yate = new Yate;
-*     $a = array('head'=>'head HTML', 'body'=>'body HTML', 'array'=>array(1,2,3));
-*     $Yate->set($a);
-*     echo $Yate->replace_template('head.php');
-*     echo $Yate->replace_template('html.php');
-*     echo $Yate->replace_template('footer.php');
-* -
+* A simple template engine for php.
+* YATE, this name is comming from the book Head First Python containing the same name template for python.
+* Usege and notice: 
+* - read more links to https://github.com/ekeyme/yate
+*
 * It simple for simple project! Happy to use it.
 * Coded by ekeyme@gmail.com, since Ag 05, 2015
 */
@@ -30,7 +17,7 @@ class Yate{
     private $template_c_dir = './templates_c';
     // 模板目录
     private $template_dir = './templates';
-    // 如果模板更新时间大于缓存模板更新时间？秒，则重新编译模板
+    // 如果模板更新时间大于缓存模板更新时间1秒，则重新编译模板
     private $cache_life = 1;
 
     //变量储存的键-值对数组，用以替换模板中的占位符
@@ -89,7 +76,7 @@ class Yate{
         if (!$replace) $replace = $this->key_value_pair;
         
         $template_path = $this->template_dir. '/' . $file;
-        $template_c_path = $this->template_c_dir . '/' . $this->prefix_template_c . $this->get_cache_file($template_path);
+        $template_c_path = $this->template_c_dir . '/' . $this->prefix_template_c . $this->assemble_cache_filename($template_path);
         
         // 缓存是否过期？过期重新编译并缓存
         if ($this->cache_life < filemtime($template_path)-filemtime($template_c_path))
@@ -126,7 +113,7 @@ class Yate{
      *@param $template_path string 模板文件的path路径
      *@return string
      */
-    private function get_cache_file($template_path){
+    private function assemble_cache_filename($template_path){
         return str_replace('/', '%', $template_path);
     }
     
