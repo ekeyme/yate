@@ -46,8 +46,8 @@ echo $Yate->replace_template('footer.php');
 <p>{$table_name}</p>
 <table>
 	<tr><td>name</td><td>age</td></tr>
-    {~foreach($array as $v): }  // if variable is array use *{~ php_code}* to iterate it. 
-	<tr><td>{~$v.name }</td><td>{$v.age}</td></tr> 
+    {~foreach($array as $v): }  // If variable is array, you can use *{~ php_code}* to iterate it. 
+	<tr><td>{$v.name }</td><td>{$v.age}</td></tr> // Also, you can do the same work like this: <tr><td>{~echo $v['name'] }</td>...
     {~endforeach; }  // end the foreach syntax
 </table>
 ```
